@@ -13,16 +13,12 @@ from audio_recorder_streamlit import audio_recorder
 # ===============================
 st.set_page_config(page_title="Lorenz Audio Cryptography", layout="wide")
 
-# --- NEW: RESET FUNCTIONALITY ---
 if st.sidebar.button("♻️ Reset Entire App"):
     for key in st.session_state.keys():
         del st.session_state[key]
     st.rerun()
 
 st.title("🔐 Advanced Lorenz Chaos Audio Encryption")
-st.markdown("""
-**Quick Tip:** If you move the graphs by mistake, hover over the top-right of the graph and click the **Home (Reset Axes)** icon 🏠.
-""")
 
 # ===============================
 # MATH & ENCRYPTION FUNCTIONS
@@ -97,7 +93,7 @@ voice, fs = None, 44100
 if input_method == "Upload File":
     uploaded_file = st.file_uploader("Upload Audio", type=["wav", "mp3", "flac", "ogg", "m4a"])
     if uploaded_file:
-        with st.spinner("Loading file..."):
+        with st.spinner("Loading..."):
             voice, _ = librosa.load(uploaded_file, sr=fs, mono=True)
         st.audio(uploaded_file)
 
@@ -105,14 +101,12 @@ elif input_method == "Record Microphone":
     st.info("Manual Toggle: Click once to start, once more to stop.")
     audio_bytes = audio_recorder(
         text="", icon_size="2x", neutral_color="#6aa36f", recording_color="#e83838",
-        energy_threshold=(-1.0, 1.0),
-        pause_threshold=60.0 
+        energy_threshold=(-1.0, 1.0), pause_threshold=60.0 
     )
     if audio_bytes:
         with st.spinner("Processing..."):
             voice, _ = librosa.load(io.BytesIO(audio_bytes), sr=fs, mono=True)
-            if np.max(np.abs(voice)) > 0:
-                voice = voice / np.max(np.abs(voice))
+            if np.max(np.abs(voice)) > 0: voice = voice / np.max(np.abs(voice))
         st.success("✓ Recording captured!")
         st.audio(audio_bytes, format="audio/wav")
 
@@ -122,7 +116,6 @@ elif input_method == "Record Microphone":
 if voice is not None:
     if st.button("🚀 Run Cryptography Pipeline", type="primary"):
         with st.spinner("Executing Chaotic Math..."):
-            start_time = time.time()
             steps = len(voice)
             
             # 1. ENCRYPTION KEYS
@@ -132,36 +125,32 @@ if voice is not None:
             cy_key = nist_pipeline(ys, zs, xs, seed=seed_y, target_len=steps)
             
             # 2. ENCRYPTION
-            cx = xs[5000:5000 + steps]
             block_size = 500
             num_blocks = steps // block_size
             voice_trimmed = voice[:num_blocks * block_size]
             voice_blocks = voice_trimmed.reshape(num_blocks, block_size)
             
-            block_perm = np.argsort(cx[:num_blocks * block_size:block_size])
+            block_perm = np.argsort(xs[5000:5000 + steps:block_size][:num_blocks])
             shuffled = voice_blocks[block_perm].flatten()
             
             mask = np.sin(cy_key[:len(shuffled)] * 10)
             encrypted = shuffled * (1 + 0.05 * mask) + (0.15 * mask)
             encrypted_norm = np.clip(encrypted, -1.0, 1.0).astype(np.float32)
             
-            # 3. HACKER DECRYPTION
+            # 3. HACKER ATTEMPT
             xs_h, ys_h, zs_h = generate_chaos(steps + 6000, h_x0, h_y0, h_z0)
-            seed_hx, seed_hy = derive_seeds(h_x0, h_y0, h_z0)
-            cx_h = xs_h[5000:5000 + steps]
+            _, seed_hy = derive_seeds(h_x0, h_y0, h_z0)
             cy_key_h = nist_pipeline(ys_h, zs_h, xs_h, seed=seed_hy, target_len=steps)
             
             mask_h = np.sin(cy_key_h[:len(encrypted)] * 10)
             unmixed_h = (encrypted - (0.15 * mask_h)) / (1 + 0.05 * mask_h)
             
-            block_perm_h = np.argsort(cx_h[:num_blocks * block_size:block_size])
-            inv_map_h = np.zeros_like(block_perm_h)
-            inv_map_h[block_perm_h] = np.arange(len(block_perm_h))
+            block_perm_h = np.argsort(xs_h[5000:5000 + steps:block_size][:num_blocks])
+            inv_map_h = np.zeros_like(block_perm_h); inv_map_h[block_perm_h] = np.arange(len(block_perm_h))
             decrypted_h = np.clip(unmixed_h.reshape(num_blocks, block_size)[inv_map_h].flatten(), -1.0, 1.0)
 
-            # 4. CORRECT BASELINE
-            inv_map = np.zeros_like(block_perm)
-            inv_map[block_perm] = np.arange(len(block_perm))
+            # 4. SYSTEM BASELINE
+            inv_map = np.zeros_like(block_perm); inv_map[block_perm] = np.arange(len(block_perm))
             unmixed_c = (encrypted - (0.15 * mask)) / (1 + 0.05 * mask)
             decrypted_c = np.clip(unmixed_c.reshape(num_blocks, block_size)[inv_map].flatten(), -1.0, 1.0)
 
@@ -180,21 +169,30 @@ if voice is not None:
             st.info("🔵 System Baseline")
             st.audio(create_audio_download(decrypted_c.astype(np.float32), fs), format="audio/wav")
 
-        # PLOTLY INTERACTIVE GRAPHS
-        n = min(len(shuffled), 40000)
-        t = np.linspace(0, n / fs, n)
+        # ===============================
+        # DYNAMIC SIGNAL ANALYSIS (SMART PLOTTING)
+        # ===============================
+        total_samples = len(shuffled)
+        duration = total_samples / fs
+        
+        # Target ~30k points for smooth interactivity
+        plot_step = max(1, total_samples // 30000)
+        
+        # Build dynamic time axis in seconds
+        time_axis = np.linspace(0, duration, total_samples)[::plot_step]
+
         fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.07,
-                           subplot_titles=("Original", "Encrypted", "Hacker Attempt", "Perfect Decryption"))
+                           subplot_titles=("1. Original Input", "2. Encrypted (Chaos Mask)", "3. Hacker Decryption Attempt", "4. Correct System Baseline"))
         
-        fig.add_trace(go.Scatter(x=t, y=voice[:n], line=dict(color='#5c92c2', width=1)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=t, y=encrypted_norm[:n], line=dict(color='#ff8c00', width=1)), row=2, col=1)
-        fig.add_trace(go.Scatter(x=t, y=decrypted_h[:n], line=dict(color=('#28a745' if hacker_success else '#dc3545'), width=1)), row=3, col=1)
-        fig.add_trace(go.Scatter(x=t, y=decrypted_c[:n], line=dict(color='#007bff', width=1)), row=4, col=1)
+        # decimated data for performance
+        fig.add_trace(go.Scatter(x=time_axis, y=voice[:total_samples][::plot_step], line=dict(color='#5c92c2', width=1)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=time_axis, y=encrypted_norm[::plot_step], line=dict(color='#ff8c00', width=1)), row=2, col=1)
+        fig.add_trace(go.Scatter(x=time_axis, y=decrypted_h[::plot_step], line=dict(color=('#28a745' if hacker_success else '#dc3545'), width=1)), row=3, col=1)
+        fig.add_trace(go.Scatter(x=time_axis, y=decrypted_c[::plot_step], line=dict(color='#007bff', width=1)), row=4, col=1)
         
-        fig.update_layout(height=900, template="plotly_dark", showlegend=False, 
+        fig.update_layout(height=1000, template="plotly_dark", showlegend=False, 
                           plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
         fig.update_yaxes(title_text="Amp", range=[-1.1, 1.1])
-        fig.update_xaxes(title_text="Time (s)", row=4, col=1)
+        fig.update_xaxes(title_text="Time (Seconds)", row=4, col=1)
         
-        # --- CONFIG FIX: Makes the 'Home' button more obvious in the mode bar ---
-        st.plotly_chart(fig, use_container_width=True, config={'displaylogo': False, 'modeBarButtonsToAdd': ['eraseshape']})
+        st.plotly_chart(fig, use_container_width=True, config={'displaylogo': False})
