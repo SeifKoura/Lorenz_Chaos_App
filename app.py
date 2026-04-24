@@ -10,6 +10,15 @@ from audio_recorder_streamlit import audio_recorder
 
 st.set_page_config(page_title="Lorenz Audio Cryptography", layout="wide")
 
+st.markdown("""
+    <style>
+    /* Force standard pointer cursor on all interactive elements */
+    button, div[role="button"], .stNumberInput button {
+        cursor: pointer !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 if st.sidebar.button("Reset Entire App"):
     for key in st.session_state.keys():
         del st.session_state[key]
@@ -64,14 +73,12 @@ def create_audio_download(audio_array, fs):
     return buffer.getvalue()
 
 st.sidebar.header("1. Encryption Key (True Password)")
-
 x0 = st.sidebar.number_input("Enter x0:", value=0.100000, format="%.6f", step=0.000001, key="true_x")
 y0 = st.sidebar.number_input("Enter y0:", value=0.000000, format="%.6f", step=0.000001, key="true_y")
 z0 = st.sidebar.number_input("Enter z0:", value=0.000000, format="%.6f", step=0.000001, key="true_z")
 
 st.sidebar.markdown("---")
 st.sidebar.header("2. Hacker Mode (Decryption Test)")
-
 h_x0 = st.sidebar.number_input("Hacker x0:", value=x0 + 0.000001, format="%.6f", step=0.000001, key="hacker_x")
 h_y0 = st.sidebar.number_input("Hacker y0:", value=y0, format="%.6f", step=0.000001, key="hacker_y")
 h_z0 = st.sidebar.number_input("Hacker z0:", value=z0, format="%.6f", step=0.000001, key="hacker_z")
@@ -166,10 +173,10 @@ if voice is not None:
         fig.add_trace(go.Scatter(x=time_axis, y=decrypted_h[::plot_step], line=dict(color=('#28a745' if hacker_success else '#dc3545'), width=1), name="Hacker"), row=3, col=1)
         fig.add_trace(go.Scatter(x=time_axis, y=decrypted_c[::plot_step], line=dict(color='#007bff', width=1), name="Received"), row=4, col=1)
         
-        fig.update_layout(height=1200, template="plotly_dark", showlegend=False, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+        fig.update_layout(height=1200, showlegend=False)
         
         for i in range(1, 5):
-            fig.update_xaxes(title_text="Time (Seconds)", row=i, col=1, showgrid=True, gridwidth=0.5, gridcolor='rgba(255,255,255,0.1)')
-            fig.update_yaxes(title_text="Amp", range=[-1.1, 1.1], row=i, col=1, showgrid=True, gridwidth=0.5, gridcolor='rgba(255,255,255,0.1)')
+            fig.update_xaxes(title_text="Time (Seconds)", row=i, col=1, showgrid=True, gridwidth=0.5)
+            fig.update_yaxes(title_text="Amp", range=[-1.1, 1.1], row=i, col=1, showgrid=True, gridwidth=0.5)
         
         st.plotly_chart(fig, use_container_width=True, config={'displaylogo': False})
