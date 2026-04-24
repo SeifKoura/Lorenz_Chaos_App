@@ -13,12 +13,15 @@ from audio_recorder_streamlit import audio_recorder
 # ===============================
 st.set_page_config(page_title="Lorenz Audio Cryptography", layout="wide")
 
-if st.sidebar.button("♻️ Reset Entire App"):
+# Remove emoji from Reset button
+if st.sidebar.button("Reset Entire App"):
     for key in st.session_state.keys():
         del st.session_state[key]
     st.rerun()
 
-st.title("🔐 Advanced Lorenz Chaos Audio Encryption")
+# --- BRANDING & TITLES (Icons Removed) ---
+st.markdown("<h4 style='opacity: 0.6; margin-bottom: -20px; font-weight: 400;'>House Of Waves</h4>", unsafe_allow_html=True)
+st.title("Advanced Lorenz Chaos Audio Encryption")
 
 # ===============================
 # MATH & ENCRYPTION FUNCTIONS
@@ -69,23 +72,23 @@ def create_audio_download(audio_array, fs):
     return buffer.getvalue()
 
 # ===============================
-# UI COMPONENTS
+# UI COMPONENTS (Icons Removed)
 # ===============================
-st.sidebar.header("🔑 1. Encryption Key (True Password)")
+st.sidebar.header("1. Encryption Key (True Password)")
 x0 = st.sidebar.number_input("Enter x0:", value=0.100000, format="%.6f", step=0.000001)
 y0 = st.sidebar.number_input("Enter y0:", value=0.000000, format="%.6f", step=0.000001)
 z0 = st.sidebar.number_input("Enter z0:", value=0.000000, format="%.6f", step=0.000001)
 
 st.sidebar.markdown("---")
-st.sidebar.header("🕵️ 2. Hacker Mode (Decryption Test)")
+st.sidebar.header("2. Hacker Mode (Decryption Test)")
 h_x0 = st.sidebar.number_input("Hacker x0:", value=x0 + 0.000001, format="%.6f", step=0.000001)
 h_y0 = st.sidebar.number_input("Hacker y0:", value=y0, format="%.6f", step=0.000001)
 h_z0 = st.sidebar.number_input("Hacker z0:", value=z0, format="%.6f", step=0.000001)
 
 # ===============================
-# AUDIO INPUT HANDLING
+# AUDIO INPUT HANDLING (Icons Removed)
 # ===============================
-st.markdown("### 🎙️ Audio Input")
+st.markdown("### Audio Input")
 input_method = st.radio("Choose source:", ["Upload File", "Record Microphone"], horizontal=True)
 
 voice, fs = None, 44100
@@ -118,13 +121,11 @@ if voice is not None:
         with st.spinner("Executing Chaotic Math..."):
             steps = len(voice)
             
-            # 1. ENCRYPTION KEYS
             xs, ys, zs = generate_chaos(steps + 6000, x0, y0, z0)
             seed_x, seed_y = derive_seeds(x0, y0, z0)
             cx_key = nist_pipeline(xs, ys, zs, seed=seed_x, target_len=steps)
             cy_key = nist_pipeline(ys, zs, xs, seed=seed_y, target_len=steps)
             
-            # 2. ENCRYPTION
             block_size = 500
             num_blocks = steps // block_size
             voice_trimmed = voice[:num_blocks * block_size]
@@ -137,7 +138,6 @@ if voice is not None:
             encrypted = shuffled * (1 + 0.05 * mask) + (0.15 * mask)
             encrypted_norm = np.clip(encrypted, -1.0, 1.0).astype(np.float32)
             
-            # 3. HACKER ATTEMPT
             xs_h, ys_h, zs_h = generate_chaos(steps + 6000, h_x0, h_y0, h_z0)
             _, seed_hy = derive_seeds(h_x0, h_y0, h_z0)
             cy_key_h = nist_pipeline(ys_h, zs_h, xs_h, seed=seed_hy, target_len=steps)
@@ -149,35 +149,36 @@ if voice is not None:
             inv_map_h = np.zeros_like(block_perm_h); inv_map_h[block_perm_h] = np.arange(len(block_perm_h))
             decrypted_h = np.clip(unmixed_h.reshape(num_blocks, block_size)[inv_map_h].flatten(), -1.0, 1.0)
 
-            # 4. RECEIVED OUTPUT (Correct Decryption)
             inv_map = np.zeros_like(block_perm); inv_map[block_perm] = np.arange(len(block_perm))
             unmixed_c = (encrypted - (0.15 * mask)) / (1 + 0.05 * mask)
             decrypted_c = np.clip(unmixed_c.reshape(num_blocks, block_size)[inv_map].flatten(), -1.0, 1.0)
 
         hacker_success = (h_x0 == x0 and h_y0 == y0 and h_z0 == z0)
         
-        st.markdown("### 🎧 Results & Playback")
+        # Icons removed from results header
+        st.markdown("### Results & Playback")
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.warning("🔒 Encrypted Audio")
+            st.warning("Encrypted Audio")
             st.audio(create_audio_download(encrypted_norm, fs), format="audio/wav")
         with c2:
-            if hacker_success: st.success("🟢 Hacker: Match!") 
-            else: st.error("🔴 Hacker: Fail")
+            if hacker_success: st.success("Hacker: Match!") 
+            else: st.error("Hacker: Fail")
             st.audio(create_audio_download(decrypted_h.astype(np.float32), fs), format="audio/wav")
         with c3:
-            st.info("🔵 Received (Authorized) Output")
+            st.info("Received (Authorized) Output")
             st.audio(create_audio_download(decrypted_c.astype(np.float32), fs), format="audio/wav")
 
         # ===============================
-        # SIGNAL ANALYSIS (PRECISE GRID)
+        # INDEPENDENT AXIS GRAPHS
         # ===============================
         total_samples = len(shuffled)
         duration = total_samples / fs
         plot_step = max(1, total_samples // 30000)
         time_axis = np.linspace(0, duration, total_samples)[::plot_step]
 
-        fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.07,
+        # Setting shared_xaxes=False to give each graph its own axis
+        fig = make_subplots(rows=4, cols=1, shared_xaxes=False, vertical_spacing=0.1,
                            subplot_titles=("1. Original Input", "2. Encrypted Signal", "3. Hacker Decryption Attempt", "4. Received (Authorized) Output"))
         
         fig.add_trace(go.Scatter(x=time_axis, y=voice[:total_samples][::plot_step], line=dict(color='#5c92c2', width=1), name="Original"), row=1, col=1)
@@ -185,11 +186,11 @@ if voice is not None:
         fig.add_trace(go.Scatter(x=time_axis, y=decrypted_h[::plot_step], line=dict(color=('#28a745' if hacker_success else '#dc3545'), width=1), name="Hacker"), row=3, col=1)
         fig.add_trace(go.Scatter(x=time_axis, y=decrypted_c[::plot_step], line=dict(color='#007bff', width=1), name="Received"), row=4, col=1)
         
-        fig.update_layout(height=1000, template="plotly_dark", showlegend=False, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+        fig.update_layout(height=1200, template="plotly_dark", showlegend=False, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
         
-        # Grid Precision Styling
-        fig.update_xaxes(showgrid=True, gridwidth=0.5, gridcolor='rgba(255,255,255,0.1)', zeroline=True)
-        fig.update_yaxes(title_text="Amp", range=[-1.1, 1.1], showgrid=True, gridwidth=0.5, gridcolor='rgba(255,255,255,0.1)')
-        fig.update_xaxes(title_text="Time (Seconds)", row=4, col=1)
+        # Add a Time Axis label to EVERY graph
+        for i in range(1, 5):
+            fig.update_xaxes(title_text="Time (Seconds)", row=i, col=1, showgrid=True, gridwidth=0.5, gridcolor='rgba(255,255,255,0.1)')
+            fig.update_yaxes(title_text="Amp", range=[-1.1, 1.1], row=i, col=1, showgrid=True, gridwidth=0.5, gridcolor='rgba(255,255,255,0.1)')
         
         st.plotly_chart(fig, use_container_width=True, config={'displaylogo': False})
