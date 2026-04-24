@@ -149,7 +149,7 @@ if voice is not None:
             inv_map_h = np.zeros_like(block_perm_h); inv_map_h[block_perm_h] = np.arange(len(block_perm_h))
             decrypted_h = np.clip(unmixed_h.reshape(num_blocks, block_size)[inv_map_h].flatten(), -1.0, 1.0)
 
-            # 4. SYSTEM BASELINE
+            # 4. RECEIVED OUTPUT (Correct Decryption)
             inv_map = np.zeros_like(block_perm); inv_map[block_perm] = np.arange(len(block_perm))
             unmixed_c = (encrypted - (0.15 * mask)) / (1 + 0.05 * mask)
             decrypted_c = np.clip(unmixed_c.reshape(num_blocks, block_size)[inv_map].flatten(), -1.0, 1.0)
@@ -166,33 +166,30 @@ if voice is not None:
             else: st.error("🔴 Hacker: Fail")
             st.audio(create_audio_download(decrypted_h.astype(np.float32), fs), format="audio/wav")
         with c3:
-            st.info("🔵 System Baseline")
+            st.info("🔵 Received (Authorized) Output")
             st.audio(create_audio_download(decrypted_c.astype(np.float32), fs), format="audio/wav")
 
         # ===============================
-        # DYNAMIC SIGNAL ANALYSIS (SMART PLOTTING)
+        # SIGNAL ANALYSIS (PRECISE GRID)
         # ===============================
         total_samples = len(shuffled)
         duration = total_samples / fs
-        
-        # Target ~30k points for smooth interactivity
         plot_step = max(1, total_samples // 30000)
-        
-        # Build dynamic time axis in seconds
         time_axis = np.linspace(0, duration, total_samples)[::plot_step]
 
         fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.07,
-                           subplot_titles=("1. Original Input", "2. Encrypted (Chaos Mask)", "3. Hacker Decryption Attempt", "4. Correct System Baseline"))
+                           subplot_titles=("1. Original Input", "2. Encrypted Signal", "3. Hacker Decryption Attempt", "4. Received (Authorized) Output"))
         
-        # decimated data for performance
-        fig.add_trace(go.Scatter(x=time_axis, y=voice[:total_samples][::plot_step], line=dict(color='#5c92c2', width=1)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=time_axis, y=encrypted_norm[::plot_step], line=dict(color='#ff8c00', width=1)), row=2, col=1)
-        fig.add_trace(go.Scatter(x=time_axis, y=decrypted_h[::plot_step], line=dict(color=('#28a745' if hacker_success else '#dc3545'), width=1)), row=3, col=1)
-        fig.add_trace(go.Scatter(x=time_axis, y=decrypted_c[::plot_step], line=dict(color='#007bff', width=1)), row=4, col=1)
+        fig.add_trace(go.Scatter(x=time_axis, y=voice[:total_samples][::plot_step], line=dict(color='#5c92c2', width=1), name="Original"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=time_axis, y=encrypted_norm[::plot_step], line=dict(color='#ff8c00', width=1), name="Encrypted"), row=2, col=1)
+        fig.add_trace(go.Scatter(x=time_axis, y=decrypted_h[::plot_step], line=dict(color=('#28a745' if hacker_success else '#dc3545'), width=1), name="Hacker"), row=3, col=1)
+        fig.add_trace(go.Scatter(x=time_axis, y=decrypted_c[::plot_step], line=dict(color='#007bff', width=1), name="Received"), row=4, col=1)
         
-        fig.update_layout(height=1000, template="plotly_dark", showlegend=False, 
-                          plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-        fig.update_yaxes(title_text="Amp", range=[-1.1, 1.1])
+        fig.update_layout(height=1000, template="plotly_dark", showlegend=False, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+        
+        # Grid Precision Styling
+        fig.update_xaxes(showgrid=True, gridwidth=0.5, gridcolor='rgba(255,255,255,0.1)', zeroline=True)
+        fig.update_yaxes(title_text="Amp", range=[-1.1, 1.1], showgrid=True, gridwidth=0.5, gridcolor='rgba(255,255,255,0.1)')
         fig.update_xaxes(title_text="Time (Seconds)", row=4, col=1)
         
         st.plotly_chart(fig, use_container_width=True, config={'displaylogo': False})
