@@ -8,7 +8,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from audio_recorder_streamlit import audio_recorder
 
-
 st.set_page_config(page_title="Lorenz Audio Cryptography", layout="wide")
 
 if st.sidebar.button("Reset Entire App"):
@@ -16,10 +15,8 @@ if st.sidebar.button("Reset Entire App"):
         del st.session_state[key]
     st.rerun()
 
-
-st.markdown("<h4 style='opacity: 0.7; margin-bottom: -20px; font-weight: 600;'>House Of Waves</h4>", unsafe_allow_html=True)
+st.markdown("<h4 style='opacity: 0.6; margin-bottom: -20px; font-weight: 400;'>House Of Waves</h4>", unsafe_allow_html=True)
 st.title("Advanced Lorenz Chaos Audio Encryption")
-
 
 sigma, rho, beta, dt = 10, 28, 2.667, 0.001
 
@@ -67,15 +64,17 @@ def create_audio_download(audio_array, fs):
     return buffer.getvalue()
 
 st.sidebar.header("1. Encryption Key (True Password)")
-x0 = st.sidebar.number_input("Enter x0:", value=0.100000, format="%.6f", step=0.000001)
-y0 = st.sidebar.number_input("Enter y0:", value=0.000000, format="%.6f", step=0.000001)
-z0 = st.sidebar.number_input("Enter z0:", value=0.000000, format="%.6f", step=0.000001)
+
+x0 = st.sidebar.number_input("Enter x0:", value=0.100000, format="%.6f", step=0.000001, key="true_x")
+y0 = st.sidebar.number_input("Enter y0:", value=0.000000, format="%.6f", step=0.000001, key="true_y")
+z0 = st.sidebar.number_input("Enter z0:", value=0.000000, format="%.6f", step=0.000001, key="true_z")
 
 st.sidebar.markdown("---")
 st.sidebar.header("2. Hacker Mode (Decryption Test)")
-h_x0 = st.sidebar.number_input("Hacker x0:", value=x0 + 0.000001, format="%.6f", step=0.000001)
-h_y0 = st.sidebar.number_input("Hacker y0:", value=y0, format="%.6f", step=0.000001)
-h_z0 = st.sidebar.number_input("Hacker z0:", value=z0, format="%.6f", step=0.000001)
+
+h_x0 = st.sidebar.number_input("Hacker x0:", value=x0 + 0.000001, format="%.6f", step=0.000001, key="hacker_x")
+h_y0 = st.sidebar.number_input("Hacker y0:", value=y0, format="%.6f", step=0.000001, key="hacker_y")
+h_z0 = st.sidebar.number_input("Hacker z0:", value=z0, format="%.6f", step=0.000001, key="hacker_z")
 
 st.markdown("### Audio Input")
 input_method = st.radio("Choose source:", ["Upload File", "Record Microphone"], horizontal=True)
@@ -99,7 +98,7 @@ elif input_method == "Record Microphone":
         with st.spinner("Processing..."):
             voice, _ = librosa.load(io.BytesIO(audio_bytes), sr=fs, mono=True)
             if np.max(np.abs(voice)) > 0: voice = voice / np.max(np.abs(voice))
-        st.success("Recording captured!")
+        st.success("✓ Recording captured!")
         st.audio(audio_bytes, format="audio/wav")
 
 if voice is not None:
@@ -140,7 +139,7 @@ if voice is not None:
             decrypted_c = np.clip(unmixed_c.reshape(num_blocks, block_size)[inv_map].flatten(), -1.0, 1.0)
 
         hacker_success = (h_x0 == x0 and h_y0 == y0 and h_z0 == z0)
-    
+        
         st.markdown("### Results & Playback")
         c1, c2, c3 = st.columns(3)
         with c1:
