@@ -20,7 +20,7 @@ if st.sidebar.button("Reset Entire App"):
     st.rerun()
 
 # --- BRANDING & TITLES (Icons Removed) ---
-st.markdown("<h4 style='opacity: 0.6; margin-bottom: -20px; font-weight: 400;'>House Of Waves</h4>", unsafe_allow_html=True)
+st.markdown("<h4 style='opacity: 0.6; margin-bottom: -20px; font-weight: 600;'>House Of Waves</h4>", unsafe_allow_html=True)
 st.title("Advanced Lorenz Chaos Audio Encryption")
 
 # ===============================
@@ -117,7 +117,7 @@ elif input_method == "Record Microphone":
 # PIPELINE EXECUTION
 # ===============================
 if voice is not None:
-    if st.button("🚀 Run Cryptography Pipeline", type="primary"):
+    if st.button("Run Cryptography Pipeline", type="primary"):
         with st.spinner("Executing Chaotic Math..."):
             steps = len(voice)
             
