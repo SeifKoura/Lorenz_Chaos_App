@@ -8,24 +8,19 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from audio_recorder_streamlit import audio_recorder
 
-# ===============================
-# PAGE CONFIGURATION
-# ===============================
+
 st.set_page_config(page_title="Lorenz Audio Cryptography", layout="wide")
 
-# Remove emoji from Reset button
 if st.sidebar.button("Reset Entire App"):
     for key in st.session_state.keys():
         del st.session_state[key]
     st.rerun()
 
-# --- BRANDING & TITLES (Icons Removed) ---
-st.markdown("<h4 style='opacity: 0.6; margin-bottom: -20px; font-weight: 600;'>House Of Waves</h4>", unsafe_allow_html=True)
+
+st.markdown("<h4 style='opacity: 0.7; margin-bottom: -20px; font-weight: 600;'>House Of Waves</h4>", unsafe_allow_html=True)
 st.title("Advanced Lorenz Chaos Audio Encryption")
 
-# ===============================
-# MATH & ENCRYPTION FUNCTIONS
-# ===============================
+
 sigma, rho, beta, dt = 10, 28, 2.667, 0.001
 
 @st.cache_data
@@ -71,9 +66,6 @@ def create_audio_download(audio_array, fs):
     sf.write(buffer, audio_array, fs, format='WAV')
     return buffer.getvalue()
 
-# ===============================
-# UI COMPONENTS (Icons Removed)
-# ===============================
 st.sidebar.header("1. Encryption Key (True Password)")
 x0 = st.sidebar.number_input("Enter x0:", value=0.100000, format="%.6f", step=0.000001)
 y0 = st.sidebar.number_input("Enter y0:", value=0.000000, format="%.6f", step=0.000001)
@@ -85,9 +77,6 @@ h_x0 = st.sidebar.number_input("Hacker x0:", value=x0 + 0.000001, format="%.6f",
 h_y0 = st.sidebar.number_input("Hacker y0:", value=y0, format="%.6f", step=0.000001)
 h_z0 = st.sidebar.number_input("Hacker z0:", value=z0, format="%.6f", step=0.000001)
 
-# ===============================
-# AUDIO INPUT HANDLING (Icons Removed)
-# ===============================
 st.markdown("### Audio Input")
 input_method = st.radio("Choose source:", ["Upload File", "Record Microphone"], horizontal=True)
 
@@ -113,9 +102,6 @@ elif input_method == "Record Microphone":
         st.success("Recording captured!")
         st.audio(audio_bytes, format="audio/wav")
 
-# ===============================
-# PIPELINE EXECUTION
-# ===============================
 if voice is not None:
     if st.button("Encrypt & Analyze Signal", type="primary"):
         with st.spinner("Executing Chaotic Math..."):
@@ -154,8 +140,7 @@ if voice is not None:
             decrypted_c = np.clip(unmixed_c.reshape(num_blocks, block_size)[inv_map].flatten(), -1.0, 1.0)
 
         hacker_success = (h_x0 == x0 and h_y0 == y0 and h_z0 == z0)
-        
-        # Icons removed from results header
+    
         st.markdown("### Results & Playback")
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -169,15 +154,11 @@ if voice is not None:
             st.info("Received (Authorized) Output")
             st.audio(create_audio_download(decrypted_c.astype(np.float32), fs), format="audio/wav")
 
-        # ===============================
-        # INDEPENDENT AXIS GRAPHS
-        # ===============================
         total_samples = len(shuffled)
         duration = total_samples / fs
         plot_step = max(1, total_samples // 30000)
         time_axis = np.linspace(0, duration, total_samples)[::plot_step]
 
-        # Setting shared_xaxes=False to give each graph its own axis
         fig = make_subplots(rows=4, cols=1, shared_xaxes=False, vertical_spacing=0.1,
                            subplot_titles=("1. Original Input", "2. Encrypted Signal", "3. Hacker Decryption Attempt", "4. Received (Authorized) Output"))
         
@@ -188,7 +169,6 @@ if voice is not None:
         
         fig.update_layout(height=1200, template="plotly_dark", showlegend=False, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
         
-        # Add a Time Axis label to EVERY graph
         for i in range(1, 5):
             fig.update_xaxes(title_text="Time (Seconds)", row=i, col=1, showgrid=True, gridwidth=0.5, gridcolor='rgba(255,255,255,0.1)')
             fig.update_yaxes(title_text="Amp", range=[-1.1, 1.1], row=i, col=1, showgrid=True, gridwidth=0.5, gridcolor='rgba(255,255,255,0.1)')
