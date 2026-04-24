@@ -110,14 +110,14 @@ elif input_method == "Record Microphone":
         with st.spinner("Processing..."):
             voice, _ = librosa.load(io.BytesIO(audio_bytes), sr=fs, mono=True)
             if np.max(np.abs(voice)) > 0: voice = voice / np.max(np.abs(voice))
-        st.success("✓ Recording captured!")
+        st.success("Recording captured!")
         st.audio(audio_bytes, format="audio/wav")
 
 # ===============================
 # PIPELINE EXECUTION
 # ===============================
 if voice is not None:
-    if st.button("Run Cryptography Pipeline", type="primary"):
+    if st.button("Encrypt & Analyze Signal", type="primary"):
         with st.spinner("Executing Chaotic Math..."):
             steps = len(voice)
             
