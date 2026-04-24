@@ -12,16 +12,22 @@ from audio_recorder_streamlit import audio_recorder
 # PAGE CONFIGURATION
 # ===============================
 st.set_page_config(page_title="Lorenz Audio Cryptography", layout="wide")
+
+# --- NEW: RESET FUNCTIONALITY ---
+if st.sidebar.button("♻️ Reset Entire App"):
+    for key in st.session_state.keys():
+        del st.session_state[key]
+    st.rerun()
+
 st.title("🔐 Advanced Lorenz Chaos Audio Encryption")
-st.markdown("Secure your audio files using block-permutation and non-linear diffusion driven by chaotic attractors.")
+st.markdown("""
+**Quick Tip:** If you move the graphs by mistake, hover over the top-right of the graph and click the **Home (Reset Axes)** icon 🏠.
+""")
 
 # ===============================
 # MATH & ENCRYPTION FUNCTIONS
 # ===============================
-sigma = 10
-rho = 28
-beta = 2.667
-dt = 0.001
+sigma, rho, beta, dt = 10, 28, 2.667, 0.001
 
 @st.cache_data
 def generate_chaos(steps, x0, y0, z0):
@@ -61,7 +67,7 @@ def derive_seeds(rx, ry, rz):
     seed_x = int(abs(rx * 1e6 + ry * 1e3 + rz) * 1000) % (2**32)
     return seed_x, seed_x + 1
 
-def create_audio_download(audio_array, fs, filename):
+def create_audio_download(audio_array, fs):
     buffer = io.BytesIO()
     sf.write(buffer, audio_array, fs, format='WAV')
     return buffer.getvalue()
@@ -84,124 +90,111 @@ h_z0 = st.sidebar.number_input("Hacker z0:", value=z0, format="%.6f", step=0.000
 # AUDIO INPUT HANDLING
 # ===============================
 st.markdown("### 🎙️ Audio Input")
-input_method = st.radio("Choose how to provide audio:", ["Upload File", "Record Microphone"], horizontal=True)
+input_method = st.radio("Choose source:", ["Upload File", "Record Microphone"], horizontal=True)
 
-voice = None
-fs = None
-TARGET_SR = 44100 
+voice, fs = None, 44100
 
 if input_method == "Upload File":
-    uploaded_file = st.file_uploader("Upload an audio file (WAV, MP3, FLAC, OGG, M4A)", type=["wav", "mp3", "flac", "ogg", "m4a"])
-    if uploaded_file is not None:
-        with st.spinner("Processing uploaded file..."):
-            voice, fs = librosa.load(uploaded_file, sr=TARGET_SR, mono=True)
-        st.success("✓ File loaded successfully!")
+    uploaded_file = st.file_uploader("Upload Audio", type=["wav", "mp3", "flac", "ogg", "m4a"])
+    if uploaded_file:
+        with st.spinner("Loading file..."):
+            voice, _ = librosa.load(uploaded_file, sr=fs, mono=True)
         st.audio(uploaded_file)
 
 elif input_method == "Record Microphone":
-    st.info("Click the microphone icon below to start recording. Click again to stop.")
-    audio_bytes = audio_recorder(text="", icon_size="2x", neutral_color="#6aa36f", recording_color="#e83838")
+    st.info("Manual Toggle: Click once to start, once more to stop.")
+    audio_bytes = audio_recorder(
+        text="", icon_size="2x", neutral_color="#6aa36f", recording_color="#e83838",
+        energy_threshold=(-1.0, 1.0),
+        pause_threshold=60.0 
+    )
     if audio_bytes:
-        with st.spinner("Processing recording..."):
-            voice, fs = librosa.load(io.BytesIO(audio_bytes), sr=TARGET_SR, mono=True)
-        st.success("✓ Recording captured successfully!")
-        preview_audio = create_audio_download(voice, fs, "preview.wav")
-        st.audio(preview_audio, format="audio/wav")
+        with st.spinner("Processing..."):
+            voice, _ = librosa.load(io.BytesIO(audio_bytes), sr=fs, mono=True)
+            if np.max(np.abs(voice)) > 0:
+                voice = voice / np.max(np.abs(voice))
+        st.success("✓ Recording captured!")
+        st.audio(audio_bytes, format="audio/wav")
 
 # ===============================
 # PIPELINE EXECUTION
 # ===============================
-if voice is not None and fs is not None:
-    steps = len(voice)
-    
+if voice is not None:
     if st.button("🚀 Run Cryptography Pipeline", type="primary"):
-        with st.spinner("Executing Chaotic Math Pipeline..."):
+        with st.spinner("Executing Chaotic Math..."):
             start_time = time.time()
+            steps = len(voice)
             
-            # --- 1. TRUE ENCRYPTION ---
+            # 1. ENCRYPTION KEYS
             xs, ys, zs = generate_chaos(steps + 6000, x0, y0, z0)
             seed_x, seed_y = derive_seeds(x0, y0, z0)
             cx_key = nist_pipeline(xs, ys, zs, seed=seed_x, target_len=steps)
             cy_key = nist_pipeline(ys, zs, xs, seed=seed_y, target_len=steps)
             
+            # 2. ENCRYPTION
             cx = xs[5000:5000 + steps]
             block_size = 500
             num_blocks = steps // block_size
-            voice_blocks = voice[:num_blocks * block_size].reshape(num_blocks, block_size)
+            voice_trimmed = voice[:num_blocks * block_size]
+            voice_blocks = voice_trimmed.reshape(num_blocks, block_size)
             
-            block_chaos = cx[:num_blocks * block_size:block_size]
-            block_perm = np.argsort(block_chaos)
-            shuffled_blocks = voice_blocks[block_perm].flatten()
+            block_perm = np.argsort(cx[:num_blocks * block_size:block_size])
+            shuffled = voice_blocks[block_perm].flatten()
             
-            mask = np.sin(cy_key[:len(shuffled_blocks)] * 10)
-            encrypted = shuffled_blocks * (1 + 0.1 * mask) + (0.2 * mask)
+            mask = np.sin(cy_key[:len(shuffled)] * 10)
+            encrypted = shuffled * (1 + 0.05 * mask) + (0.15 * mask)
             encrypted_norm = np.clip(encrypted, -1.0, 1.0).astype(np.float32)
             
-            # --- 2. HACKER DECRYPTION ---
+            # 3. HACKER DECRYPTION
             xs_h, ys_h, zs_h = generate_chaos(steps + 6000, h_x0, h_y0, h_z0)
             seed_hx, seed_hy = derive_seeds(h_x0, h_y0, h_z0)
             cx_h = xs_h[5000:5000 + steps]
             cy_key_h = nist_pipeline(ys_h, zs_h, xs_h, seed=seed_hy, target_len=steps)
             
             mask_h = np.sin(cy_key_h[:len(encrypted)] * 10)
-            unmixed_h = (encrypted - (0.2 * mask_h)) / (1 + 0.1 * mask_h)
+            unmixed_h = (encrypted - (0.15 * mask_h)) / (1 + 0.05 * mask_h)
             
-            block_chaos_h = cx_h[:num_blocks * block_size:block_size]
-            block_perm_h = np.argsort(block_chaos_h)
-            inv_block_map_h = np.zeros_like(block_perm_h)
-            inv_block_map_h[block_perm_h] = np.arange(len(block_perm_h))
-            
-            unmixed_blocks_h = unmixed_h[:num_blocks * block_size].reshape(num_blocks, block_size)
-            decrypted_hacker = np.clip(unmixed_blocks_h[inv_block_map_h].flatten(), -1.0, 1.0).astype(np.float32)
+            block_perm_h = np.argsort(cx_h[:num_blocks * block_size:block_size])
+            inv_map_h = np.zeros_like(block_perm_h)
+            inv_map_h[block_perm_h] = np.arange(len(block_perm_h))
+            decrypted_h = np.clip(unmixed_h.reshape(num_blocks, block_size)[inv_map_h].flatten(), -1.0, 1.0)
 
-            # --- 3. SYSTEM BASELINE ---
-            inv_block_map = np.zeros_like(block_perm)
-            inv_block_map[block_perm] = np.arange(len(block_perm))
-            unmixed_blocks = unmixed_h if (h_x0 == x0 and h_y0 == y0 and h_z0 == z0) else (encrypted - (0.2 * mask)) / (1 + 0.1 * mask)
-            decrypted_correct = np.clip(unmixed_blocks.reshape(num_blocks, block_size)[inv_block_map].flatten(), -1.0, 1.0).astype(np.float32)
+            # 4. CORRECT BASELINE
+            inv_map = np.zeros_like(block_perm)
+            inv_map[block_perm] = np.arange(len(block_perm))
+            unmixed_c = (encrypted - (0.15 * mask)) / (1 + 0.05 * mask)
+            decrypted_c = np.clip(unmixed_c.reshape(num_blocks, block_size)[inv_map].flatten(), -1.0, 1.0)
 
-        # Logic Check for UI
-        hacker_success = (h_x0 == x0) and (h_y0 == y0) and (h_z0 == z0)
-
-        # ===============================
-        # UI RESULTS & PLAYERS
-        # ===============================
-        st.markdown("### 🎧 Results & Playback")
-        col1, col2, col3 = st.columns(3)
+        hacker_success = (h_x0 == x0 and h_y0 == y0 and h_z0 == z0)
         
-        with col1:
+        st.markdown("### 🎧 Results & Playback")
+        c1, c2, c3 = st.columns(3)
+        with c1:
             st.warning("🔒 Encrypted Audio")
-            enc_audio = create_audio_download(encrypted_norm, fs, "encrypted.wav")
-            st.audio(enc_audio, format="audio/wav")
+            st.audio(create_audio_download(encrypted_norm, fs), format="audio/wav")
+        with c2:
+            if hacker_success: st.success("🟢 Hacker: Match!") 
+            else: st.error("🔴 Hacker: Fail")
+            st.audio(create_audio_download(decrypted_h.astype(np.float32), fs), format="audio/wav")
+        with c3:
+            st.info("🔵 System Baseline")
+            st.audio(create_audio_download(decrypted_c.astype(np.float32), fs), format="audio/wav")
 
-        with col2:
-            if hacker_success: st.success("🟢 Hacker Test: SUCCESS (Key Matched!)")
-            else: st.error("🔴 Hacker Test: FAILED (Wrong Key)")
-            h_audio = create_audio_download(decrypted_hacker, fs, "hacker.wav")
-            st.audio(h_audio, format="audio/wav")
-
-        with col3:
-            st.info("🔵 System Baseline (Perfect Key)")
-            c_audio = create_audio_download(decrypted_correct, fs, "correct.wav")
-            st.audio(c_audio, format="audio/wav")
-
-        # ===============================
         # PLOTLY INTERACTIVE GRAPHS
-        # ===============================
-        n = min(num_blocks * block_size, 50000)
-        t_axis = np.linspace(0, n / fs, n)
-
-        fig = make_subplots(
-            rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.07,
-            subplot_titles=("1. Original Voice", "2. Encrypted", "3. Hacker Decryption", "4. System Baseline")
-        )
-
-        fig.add_trace(go.Scatter(x=t_axis, y=voice[:n], line=dict(color='#5c92c2', width=1)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=t_axis, y=encrypted_norm[:n], line=dict(color='#ff8c00', width=1)), row=2, col=1)
-        fig.add_trace(go.Scatter(x=t_axis, y=decrypted_hacker[:n], line=dict(color=('#28a745' if hacker_success else '#dc3545'), width=1)), row=3, col=1)
-        fig.add_trace(go.Scatter(x=t_axis, y=decrypted_correct[:n], line=dict(color='#007bff', width=1)), row=4, col=1)
-
-        fig.update_layout(height=900, template="plotly_dark", showlegend=False, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+        n = min(len(shuffled), 40000)
+        t = np.linspace(0, n / fs, n)
+        fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.07,
+                           subplot_titles=("Original", "Encrypted", "Hacker Attempt", "Perfect Decryption"))
+        
+        fig.add_trace(go.Scatter(x=t, y=voice[:n], line=dict(color='#5c92c2', width=1)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=t, y=encrypted_norm[:n], line=dict(color='#ff8c00', width=1)), row=2, col=1)
+        fig.add_trace(go.Scatter(x=t, y=decrypted_h[:n], line=dict(color=('#28a745' if hacker_success else '#dc3545'), width=1)), row=3, col=1)
+        fig.add_trace(go.Scatter(x=t, y=decrypted_c[:n], line=dict(color='#007bff', width=1)), row=4, col=1)
+        
+        fig.update_layout(height=900, template="plotly_dark", showlegend=False, 
+                          plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
         fig.update_yaxes(title_text="Amp", range=[-1.1, 1.1])
         fig.update_xaxes(title_text="Time (s)", row=4, col=1)
-        st.plotly_chart(fig, use_container_width=True)
+        
+        # --- CONFIG FIX: Makes the 'Home' button more obvious in the mode bar ---
+        st.plotly_chart(fig, use_container_width=True, config={'displaylogo': False, 'modeBarButtonsToAdd': ['eraseshape']})
