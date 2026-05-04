@@ -4,68 +4,29 @@ import soundfile as sf
 import librosa
 import io
 import time
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email.mime.text import MIMEText
-from email import encoders
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from audio_recorder_streamlit import audio_recorder
 
-# ===============================
-# PAGE CONFIGURATION & CSS
-# ===============================
 st.set_page_config(page_title="Lorenz Audio Cryptography", layout="wide")
 
 st.markdown("""
     <style>
+    /* Force standard pointer cursor on all interactive elements */
     button, div[role="button"], .stNumberInput button {
         cursor: pointer !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- BRANDING ---
+if st.sidebar.button("Reset Entire App"):
+    for key in st.session_state.keys():
+        del st.session_state[key]
+    st.rerun()
+
 st.markdown("<h4 style='opacity: 0.6; margin-bottom: -20px; font-weight: 400;'>House Of Waves</h4>", unsafe_allow_html=True)
 st.title("Advanced Lorenz Chaos Audio Encryption")
 
-# ===============================
-# EMAIL LOGIC (THE FREE WAY)
-# ===============================
-def send_email(recipient_email, audio_data, filename):
-    # --- CONFIGURATION (Use Streamlit Secrets in production!) ---
-    SENDER_EMAIL = "your-email@gmail.com" 
-    SENDER_PASSWORD = "your-app-password" # 16 chars from Google App Passwords
-    
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = SENDER_EMAIL
-        msg['To'] = recipient_email
-        msg['Subject'] = "House Of Waves: Authorized Audio Signal"
-
-        body = "The encrypted signal has been processed. Attached is the Authorized (Decrypted) Output."
-        msg.attach(MIMEText(body, 'plain'))
-
-        part = MIMEBase('application', 'octet-stream')
-        part.set_payload(audio_data)
-        encoders.encode_base64(part)
-        part.add_header('Content-Disposition', f"attachment; filename= {filename}")
-        msg.attach(part)
-
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(SENDER_EMAIL, SENDER_PASSWORD)
-        server.send_message(msg)
-        server.quit()
-        return True
-    except Exception as e:
-        st.error(f"Mail Error: {e}")
-        return False
-
-# ===============================
-# MATH & ENCRYPTION FUNCTIONS
-# ===============================
 sigma, rho, beta, dt = 10, 28, 2.667, 0.001
 
 @st.cache_data
@@ -111,51 +72,47 @@ def create_audio_download(audio_array, fs):
     sf.write(buffer, audio_array, fs, format='WAV')
     return buffer.getvalue()
 
-# ===============================
-# SIDEBAR UI
-# ===============================
-st.sidebar.header("1. Encryption Key")
+st.sidebar.header("1. Encryption Key (True Password)")
 x0 = st.sidebar.number_input("Enter x0:", value=0.100000, format="%.6f", step=0.000001, key="true_x")
 y0 = st.sidebar.number_input("Enter y0:", value=0.000000, format="%.6f", step=0.000001, key="true_y")
 z0 = st.sidebar.number_input("Enter z0:", value=0.000000, format="%.6f", step=0.000001, key="true_z")
 
 st.sidebar.markdown("---")
-st.sidebar.header("2. Hacker Mode")
+st.sidebar.header("2. Hacker Mode (Decryption Test)")
 h_x0 = st.sidebar.number_input("Hacker x0:", value=x0 + 0.000001, format="%.6f", step=0.000001, key="hacker_x")
+h_y0 = st.sidebar.number_input("Hacker y0:", value=y0, format="%.6f", step=0.000001, key="hacker_y")
+h_z0 = st.sidebar.number_input("Hacker z0:", value=z0, format="%.6f", step=0.000001, key="hacker_z")
 
-st.sidebar.markdown("---")
-st.sidebar.header("3. Secure Delivery")
-dest_email = st.sidebar.text_input("Recipient Email:", placeholder="agent@agency.com")
-
-if st.sidebar.button("Reset Entire App"):
-    for key in st.session_state.keys(): del st.session_state[key]
-    st.rerun()
-
-# ===============================
-# AUDIO INPUT
-# ===============================
 st.markdown("### Audio Input")
 input_method = st.radio("Choose source:", ["Upload File", "Record Microphone"], horizontal=True)
 
 voice, fs = None, 44100
+
 if input_method == "Upload File":
-    uploaded_file = st.file_uploader("Upload Audio", type=["wav", "mp3", "flac"])
+    uploaded_file = st.file_uploader("Upload Audio", type=["wav", "mp3", "flac", "ogg", "m4a"])
     if uploaded_file:
-        voice, _ = librosa.load(uploaded_file, sr=fs, mono=True)
+        with st.spinner("Loading..."):
+            voice, _ = librosa.load(uploaded_file, sr=fs, mono=True)
         st.audio(uploaded_file)
+
 elif input_method == "Record Microphone":
-    audio_bytes = audio_recorder(text="", icon_size="2x", neutral_color="#6aa36f")
+    st.info("Manual Toggle: Click once to start, once more to stop.")
+    audio_bytes = audio_recorder(
+        text="", icon_size="2x", neutral_color="#6aa36f", recording_color="#e83838",
+        energy_threshold=(-1.0, 1.0), pause_threshold=60.0 
+    )
     if audio_bytes:
-        voice, _ = librosa.load(io.BytesIO(audio_bytes), sr=fs, mono=True)
+        with st.spinner("Processing..."):
+            voice, _ = librosa.load(io.BytesIO(audio_bytes), sr=fs, mono=True)
+            if np.max(np.abs(voice)) > 0: voice = voice / np.max(np.abs(voice))
+        st.success("✓ Recording captured!")
         st.audio(audio_bytes, format="audio/wav")
 
-# ===============================
-# EXECUTION
-# ===============================
 if voice is not None:
     if st.button("Encrypt & Analyze Signal", type="primary"):
-        with st.spinner("Processing..."):
+        with st.spinner("Executing Chaotic Math..."):
             steps = len(voice)
+            
             xs, ys, zs = generate_chaos(steps + 6000, x0, y0, z0)
             seed_x, seed_y = derive_seeds(x0, y0, z0)
             cx_key = nist_pipeline(xs, ys, zs, seed=seed_x, target_len=steps)
@@ -173,25 +130,53 @@ if voice is not None:
             encrypted = shuffled * (1 + 0.05 * mask) + (0.15 * mask)
             encrypted_norm = np.clip(encrypted, -1.0, 1.0).astype(np.float32)
             
-            # AUTHORIZED DECRYPTION
+            xs_h, ys_h, zs_h = generate_chaos(steps + 6000, h_x0, h_y0, h_z0)
+            _, seed_hy = derive_seeds(h_x0, h_y0, h_z0)
+            cy_key_h = nist_pipeline(ys_h, zs_h, xs_h, seed=seed_hy, target_len=steps)
+            
+            mask_h = np.sin(cy_key_h[:len(encrypted)] * 10)
+            unmixed_h = (encrypted - (0.15 * mask_h)) / (1 + 0.05 * mask_h)
+            
+            block_perm_h = np.argsort(xs_h[5000:5000 + steps:block_size][:num_blocks])
+            inv_map_h = np.zeros_like(block_perm_h); inv_map_h[block_perm_h] = np.arange(len(block_perm_h))
+            decrypted_h = np.clip(unmixed_h.reshape(num_blocks, block_size)[inv_map_h].flatten(), -1.0, 1.0)
+
             inv_map = np.zeros_like(block_perm); inv_map[block_perm] = np.arange(len(block_perm))
             unmixed_c = (encrypted - (0.15 * mask)) / (1 + 0.05 * mask)
             decrypted_c = np.clip(unmixed_c.reshape(num_blocks, block_size)[inv_map].flatten(), -1.0, 1.0)
-            
-            # Store in session so the email button can find it
-            st.session_state.final_audio = create_audio_download(decrypted_c.astype(np.float32), fs)
 
-        st.markdown("### Results")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.warning("Encrypted Signal")
-            st.audio(create_audio_download(encrypted_norm, fs))
-        with col2:
-            st.info("Authorized Output")
-            st.audio(st.session_state.final_audio)
+        hacker_success = (h_x0 == x0 and h_y0 == y0 and h_z0 == z0)
+        
+        st.markdown("### Results & Playback")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.warning("Encrypted Audio")
+            st.audio(create_audio_download(encrypted_norm, fs), format="audio/wav")
+        with c2:
+            if hacker_success: st.success("Hacker: Match!") 
+            else: st.error("Hacker: Fail")
+            st.audio(create_audio_download(decrypted_h.astype(np.float32), fs), format="audio/wav")
+        with c3:
+            st.info("Received (Authorized) Output")
+            st.audio(create_audio_download(decrypted_c.astype(np.float32), fs), format="audio/wav")
 
-        if dest_email:
-            if st.button("📧 Dispatch to Authorized Recipient"):
-                with st.spinner("Sending secure mail..."):
-                    success = send_email(dest_email, st.session_state.final_audio, "authorized_output.wav")
-                    if success: st.success(f"Signal sent to {dest_email}")
+        total_samples = len(shuffled)
+        duration = total_samples / fs
+        plot_step = max(1, total_samples // 30000)
+        time_axis = np.linspace(0, duration, total_samples)[::plot_step]
+
+        fig = make_subplots(rows=4, cols=1, shared_xaxes=False, vertical_spacing=0.1,
+                           subplot_titles=("1. Original Input", "2. Encrypted Signal", "3. Hacker Decryption Attempt", "4. Received (Authorized) Output"))
+        
+        fig.add_trace(go.Scatter(x=time_axis, y=voice[:total_samples][::plot_step], line=dict(color='#5c92c2', width=1), name="Original"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=time_axis, y=encrypted_norm[::plot_step], line=dict(color='#ff8c00', width=1), name="Encrypted"), row=2, col=1)
+        fig.add_trace(go.Scatter(x=time_axis, y=decrypted_h[::plot_step], line=dict(color=('#28a745' if hacker_success else '#dc3545'), width=1), name="Hacker"), row=3, col=1)
+        fig.add_trace(go.Scatter(x=time_axis, y=decrypted_c[::plot_step], line=dict(color='#007bff', width=1), name="Received"), row=4, col=1)
+        
+        fig.update_layout(height=1200, showlegend=False)
+        
+        for i in range(1, 5):
+            fig.update_xaxes(title_text="Time (Seconds)", row=i, col=1, showgrid=True, gridwidth=0.5)
+            fig.update_yaxes(title_text="Amp", range=[-1.1, 1.1], row=i, col=1, showgrid=True, gridwidth=0.5)
+        
+        st.plotly_chart(fig, use_container_width=True, config={'displaylogo': False})
