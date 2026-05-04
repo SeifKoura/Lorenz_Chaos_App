@@ -77,9 +77,43 @@ def create_audio_download(audio_array, fs):
     return buffer.getvalue()
 
 # ─────────────────────────────────────────────
-# Mailtrap sender  (pure stdlib, zero new deps)
+# SMTP provider registry
+# Each entry: (display_name, host, port, use_ssl, sender_hint, pass_hint)
+# use_ssl=True  → smtplib.SMTP_SSL  (implicit TLS from the start, e.g. port 465)
+# use_ssl=False → smtplib.SMTP + STARTTLS (explicit upgrade, e.g. port 587)
 # ─────────────────────────────────────────────
-def send_audio_via_mailtrap(
+PROVIDERS = {
+    "Gmail": {
+        "host": "smtp.gmail.com", "port": 587, "ssl": False,
+        "sender_hint": "yourname@gmail.com",
+        "pass_hint":   "16-char App Password (Google Account → Security → App Passwords)",
+    },
+    "Outlook / Hotmail": {
+        "host": "smtp-mail.outlook.com", "port": 587, "ssl": False,
+        "sender_hint": "yourname@outlook.com",
+        "pass_hint":   "Your regular Outlook password",
+    },
+    "Yahoo Mail": {
+        "host": "smtp.mail.yahoo.com", "port": 465, "ssl": True,
+        "sender_hint": "yourname@yahoo.com",
+        "pass_hint":   "App Password (Yahoo Account Security → Generate app password)",
+    },
+    "Mailtrap Sandbox (testing)": {
+        "host": "sandbox.smtp.mailtrap.io", "port": 587, "ssl": False,
+        "sender_hint": "noreply@houseofwaves.io",
+        "pass_hint":   "Mailtrap SMTP password from sandbox inbox → SMTP Settings",
+    },
+    "Custom SMTP": {
+        "host": "", "port": 587, "ssl": False,
+        "sender_hint": "you@yourdomain.com",
+        "pass_hint":   "Your SMTP password",
+    },
+}
+
+def send_audio_email(
+    host: str,
+    port: int,
+    use_ssl: bool,
     smtp_user: str,
     smtp_pass: str,
     sender: str,
@@ -88,8 +122,9 @@ def send_audio_via_mailtrap(
     filename: str = "authorized_output.wav",
 ) -> tuple[bool, str]:
     """
-    Sends audio_bytes as a WAV attachment through Mailtrap's sandbox SMTP.
-    Returns (success: bool, message: str).
+    Generic SMTP sender. Works with any provider — real inboxes or Mailtrap sandbox.
+    use_ssl=True  → implicit TLS (SMTP_SSL, port 465 style)
+    use_ssl=False → STARTTLS upgrade (port 587 style)
     """
     try:
         msg = MIMEMultipart()
@@ -108,51 +143,36 @@ def send_audio_via_mailtrap(
         part = MIMEBase("audio", "wav")
         part.set_payload(audio_bytes)
         encoders.encode_base64(part)
-        part.add_header(
-            "Content-Disposition",
-            f'attachment; filename="{filename}"',
-        )
+        part.add_header("Content-Disposition", f'attachment; filename="{filename}"')
         msg.attach(part)
 
-        # Try STARTTLS ports first, then SSL fallback.
-        # Port 2525 is sometimes blocked by ISPs/firewalls; 587 is more universally open.
-        host = "sandbox.smtp.mailtrap.io"
-        starttls_ports = [587, 2525, 25]
-        ssl_port       = 465
-        last_error     = None
-
-        # ── attempt STARTTLS on each port ──────────────────────────────────
-        for port in starttls_ports:
-            try:
-                with smtplib.SMTP(host, port, timeout=10) as server:
-                    server.ehlo()           # identify to server
-                    server.starttls()       # upgrade to TLS
-                    server.ehlo()           # re-identify over encrypted channel (required!)
-                    server.login(smtp_user, smtp_pass)
-                    server.sendmail(sender, recipient, msg.as_string())
-                return True, f"Email sent successfully to {recipient}! (port {port})"
-            except smtplib.SMTPAuthenticationError:
-                # Credentials wrong — no point trying other ports
-                return False, "Authentication failed — double-check your Mailtrap username & password."
-            except Exception as e:
-                last_error = e
-                continue   # try next port
-
-        # ── fallback: implicit SSL on 465 ──────────────────────────────────
-        try:
-            with smtplib.SMTP_SSL(host, ssl_port, timeout=10) as server:
+        if use_ssl:
+            # Implicit TLS — connection is encrypted from byte 1
+            with smtplib.SMTP_SSL(host, port, timeout=15) as server:
                 server.ehlo()
                 server.login(smtp_user, smtp_pass)
                 server.sendmail(sender, recipient, msg.as_string())
-            return True, f"Email sent successfully to {recipient}! (port {ssl_port} SSL)"
-        except smtplib.SMTPAuthenticationError:
-            return False, "Authentication failed — double-check your Mailtrap username & password."
-        except Exception as e:
-            last_error = e
+        else:
+            # STARTTLS — start plain, upgrade to TLS, re-identify
+            with smtplib.SMTP(host, port, timeout=15) as server:
+                server.ehlo()
+                server.starttls()
+                server.ehlo()   # must re-identify after TLS upgrade
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(sender, recipient, msg.as_string())
 
-        return False, f"All ports failed. Last error: {last_error}"
+        return True, f"✅ Email delivered to {recipient}!"
+
     except smtplib.SMTPAuthenticationError:
-        return False, "Authentication failed — double-check your Mailtrap username & password."
+        return False, (
+            "Authentication failed. "
+            "For Gmail use an App Password, not your regular password. "
+            "For Outlook use your normal password. Check the hint in the sidebar."
+        )
+    except smtplib.SMTPConnectError as e:
+        return False, f"Could not connect to {host}:{port} — {e}"
+    except smtplib.SMTPRecipientsRefused:
+        return False, f"Recipient address rejected by server: {recipient}"
     except Exception as e:
         return False, f"Unexpected error: {e}"
 
@@ -172,18 +192,32 @@ h_y0 = st.sidebar.number_input("Hacker y0:", value=y0, format="%.6f", step=0.000
 h_z0 = st.sidebar.number_input("Hacker z0:", value=z0, format="%.6f", step=0.000001, key="hacker_z")
 
 # ─────────────────────────────────────────────
-# Sidebar — Mailtrap Configuration
+# Sidebar — Email Configuration
 # ─────────────────────────────────────────────
 st.sidebar.markdown("---")
-st.sidebar.header("3. Mailtrap (Email Test)")
-st.sidebar.caption(
-    "Credentials from your Mailtrap sandbox inbox → "
-    "SMTP Settings tab."
-)
-mt_user   = st.sidebar.text_input("SMTP Username", placeholder="e.g. abc123def456", type="default")
-mt_pass   = st.sidebar.text_input("SMTP Password", placeholder="paste here", type="password")
-mt_sender = st.sidebar.text_input("From address",  value="noreply@houseofwaves.io")
-mt_to     = st.sidebar.text_input("Recipient email", placeholder="you@example.com")
+st.sidebar.header("3. Email Delivery")
+
+selected_provider = st.sidebar.selectbox("Provider", list(PROVIDERS.keys()))
+prov = PROVIDERS[selected_provider]
+
+# Gmail / Yahoo note
+if selected_provider == "Gmail":
+    st.sidebar.info("Gmail requires an **App Password**, not your account password.\n\nGoogle Account → Security → 2-Step Verification → App Passwords.")
+elif selected_provider == "Yahoo Mail":
+    st.sidebar.info("Yahoo requires an **App Password**.\n\nYahoo Account Security → Generate app password.")
+
+# Custom SMTP: let user enter host/port/TLS
+if selected_provider == "Custom SMTP":
+    custom_host = st.sidebar.text_input("SMTP Host", placeholder="smtp.yourdomain.com")
+    custom_port = st.sidebar.number_input("Port", value=587, min_value=1, max_value=65535)
+    custom_ssl  = st.sidebar.checkbox("Use implicit SSL (port 465 style)", value=False)
+    prov = {"host": custom_host, "port": int(custom_port), "ssl": custom_ssl,
+            "sender_hint": prov["sender_hint"], "pass_hint": prov["pass_hint"]}
+
+mt_user   = st.sidebar.text_input("SMTP Username / Email", placeholder=prov["sender_hint"])
+mt_pass   = st.sidebar.text_input("Password", placeholder=prov["pass_hint"], type="password")
+mt_sender = st.sidebar.text_input("From address", value=prov["sender_hint"])
+mt_to     = st.sidebar.text_input("Send to (recipient)", placeholder="recipient@example.com")
 
 
 # ─────────────────────────────────────────────
@@ -314,14 +348,17 @@ if voice is not None:
         st.markdown("---")
         st.markdown("### 📧 Send Authorized Output via Email")
 
-        all_filled = all([mt_user, mt_pass, mt_sender, mt_to])
+        all_filled = all([mt_user, mt_pass, mt_sender, mt_to, prov["host"]])
 
         if not all_filled:
-            st.info("Fill in the Mailtrap credentials in the sidebar to enable sending.")
+            st.info("Fill in all email credentials in the sidebar to enable sending.")
         else:
             if st.button("Send Authorized Audio to Inbox", type="secondary"):
-                with st.spinner("Connecting to Mailtrap..."):
-                    ok, msg = send_audio_via_mailtrap(
+                with st.spinner(f"Connecting to {prov['host']}..."):
+                    ok, result_msg = send_audio_email(
+                        host        = prov["host"],
+                        port        = prov["port"],
+                        use_ssl     = prov["ssl"],
                         smtp_user   = mt_user,
                         smtp_pass   = mt_pass,
                         sender      = mt_sender,
@@ -329,6 +366,6 @@ if voice is not None:
                         audio_bytes = st.session_state["authorized_wav"],
                     )
                 if ok:
-                    st.success(msg)
+                    st.success(result_msg)
                 else:
-                    st.error(msg)
+                    st.error(result_msg)
