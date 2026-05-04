@@ -71,10 +71,14 @@ def derive_seeds(rx, ry, rz):
     seed_x = int(abs(rx * 1e6 + ry * 1e3 + rz) * 1000) % (2**32)
     return seed_x, seed_x + 1
 
-def create_audio_download(audio_array, fs):
+def create_audio_download(audio_array, fs, fmt="WAV"):
+    """fmt: 'WAV' | 'FLAC' | 'OGG'  — all supported by soundfile natively."""
     buffer = io.BytesIO()
-    sf.write(buffer, audio_array, fs, format='WAV')
+    sf.write(buffer, audio_array, fs, format=fmt)
     return buffer.getvalue()
+
+# MIME subtype lookup for email attachment header
+AUDIO_MIME = {"WAV": "wav", "FLAC": "flac", "OGG": "ogg"}
 
 # ─────────────────────────────────────────────
 # SMTP provider registry
@@ -120,6 +124,7 @@ def send_audio_email(
     recipient: str,
     audio_bytes: bytes,
     filename: str = "authorized_output.wav",
+    mime_subtype: str = "wav",
 ) -> tuple[bool, str]:
     """
     Generic SMTP sender. Works with any provider — real inboxes or Mailtrap sandbox.
@@ -140,7 +145,7 @@ def send_audio_email(
         )
         msg.attach(MIMEText(body, "plain"))
 
-        part = MIMEBase("audio", "wav")
+        part = MIMEBase("audio", mime_subtype)
         part.set_payload(audio_bytes)
         encoders.encode_base64(part)
         part.add_header("Content-Disposition", f'attachment; filename="{filename}"')
@@ -165,9 +170,11 @@ def send_audio_email(
 
     except smtplib.SMTPAuthenticationError:
         return False, (
-            "Authentication failed. "
-            "For Gmail use an App Password, not your regular password. "
-            "For Outlook use your normal password. Check the hint in the sidebar."
+            "Authentication failed.\n\n"
+            "• Gmail: Use a 16-char App Password — Google Account → Security → 2-Step Verification → App Passwords.\n"
+            "• Outlook/Hotmail: You must enable SMTP AUTH first → outlook.com → Settings (gear) → "
+            "Mail → Sync email → POP and IMAP → turn ON 'SMTP' under 'Let devices and apps use POP'. "
+            "Then use your normal password here."
         )
     except smtplib.SMTPConnectError as e:
         return False, f"Could not connect to {host}:{port} — {e}"
@@ -200,11 +207,18 @@ st.sidebar.header("3. Email Delivery")
 selected_provider = st.sidebar.selectbox("Provider", list(PROVIDERS.keys()))
 prov = PROVIDERS[selected_provider]
 
-# Gmail / Yahoo note
+# Gmail / Yahoo / Outlook notes
 if selected_provider == "Gmail":
     st.sidebar.info("Gmail requires an **App Password**, not your account password.\n\nGoogle Account → Security → 2-Step Verification → App Passwords.")
 elif selected_provider == "Yahoo Mail":
     st.sidebar.info("Yahoo requires an **App Password**.\n\nYahoo Account Security → Generate app password.")
+elif selected_provider == "Outlook / Hotmail":
+    st.sidebar.warning(
+        "**Outlook requires SMTP AUTH to be enabled first.**\n\n"
+        "outlook.com → Settings (gear icon) → Mail → Sync email → "
+        "POP and IMAP → enable **SMTP** under 'Let devices and apps use POP'.\n\n"
+        "Then come back and enter your regular password."
+    )
 
 # Custom SMTP: let user enter host/port/TLS
 if selected_provider == "Custom SMTP":
@@ -218,6 +232,14 @@ mt_user   = st.sidebar.text_input("SMTP Username / Email", placeholder=prov["sen
 mt_pass   = st.sidebar.text_input("Password", placeholder=prov["pass_hint"], type="password")
 mt_sender = st.sidebar.text_input("From address", value=prov["sender_hint"])
 mt_to     = st.sidebar.text_input("Send to (recipient)", placeholder="recipient@example.com")
+
+st.sidebar.markdown("---")
+st.sidebar.header("4. Attachment Format")
+audio_fmt = st.sidebar.selectbox(
+    "Audio format to send",
+    ["WAV", "FLAC", "OGG"],
+    help="WAV = uncompressed. FLAC = lossless compressed (~50% smaller). OGG = lossy compressed (smallest).",
+)
 
 
 # ─────────────────────────────────────────────
@@ -296,9 +318,10 @@ if voice is not None:
                 unmixed_c.reshape(num_blocks, block_size)[inv_map].flatten(), -1.0, 1.0
             )
 
-        # Store authorized audio bytes in session state so the mail button can use them
-        authorized_wav = create_audio_download(decrypted_c.astype(np.float32), fs)
-        st.session_state["authorized_wav"] = authorized_wav
+        # Build authorized audio in chosen format
+        authorized_audio = create_audio_download(decrypted_c.astype(np.float32), fs, fmt=audio_fmt)
+        # Always keep a WAV copy for the in-page player (browsers require WAV/MP3)
+        authorized_wav_play = create_audio_download(decrypted_c.astype(np.float32), fs, fmt="WAV")
 
         hacker_success = (h_x0 == x0 and h_y0 == y0 and h_z0 == z0)
 
@@ -306,16 +329,16 @@ if voice is not None:
         c1, c2, c3 = st.columns(3)
         with c1:
             st.warning("Encrypted Audio")
-            st.audio(create_audio_download(encrypted_norm, fs), format="audio/wav")
+            st.audio(create_audio_download(encrypted_norm, fs, fmt="WAV"), format="audio/wav")
         with c2:
             if hacker_success:
                 st.success("Hacker: Match!")
             else:
                 st.error("Hacker: Fail")
-            st.audio(create_audio_download(decrypted_h.astype(np.float32), fs), format="audio/wav")
+            st.audio(create_audio_download(decrypted_h.astype(np.float32), fs, fmt="WAV"), format="audio/wav")
         with c3:
             st.info("Received (Authorized) Output")
-            st.audio(authorized_wav, format="audio/wav")
+            st.audio(authorized_wav_play, format="audio/wav")
 
         total_samples = len(shuffled)
         duration   = total_samples / fs
@@ -341,31 +364,30 @@ if voice is not None:
 
         st.plotly_chart(fig, use_container_width=True, config={"displaylogo": False})
 
-    # ─────────────────────────────────────────────
-    # Email section  (shown once audio is ready)
-    # ─────────────────────────────────────────────
-    if "authorized_wav" in st.session_state:
+        # ── Auto-send email if credentials are ready ───────────────────────
         st.markdown("---")
-        st.markdown("### 📧 Send Authorized Output via Email")
-
+        st.markdown("### 📧 Email Delivery")
         all_filled = all([mt_user, mt_pass, mt_sender, mt_to, prov["host"]])
-
         if not all_filled:
-            st.info("Fill in all email credentials in the sidebar to enable sending.")
+            st.info("Fill in the email credentials in the sidebar to enable auto-sending.")
         else:
-            if st.button("Send Authorized Audio to Inbox", type="secondary"):
-                with st.spinner(f"Connecting to {prov['host']}..."):
-                    ok, result_msg = send_audio_email(
-                        host        = prov["host"],
-                        port        = prov["port"],
-                        use_ssl     = prov["ssl"],
-                        smtp_user   = mt_user,
-                        smtp_pass   = mt_pass,
-                        sender      = mt_sender,
-                        recipient   = mt_to,
-                        audio_bytes = st.session_state["authorized_wav"],
-                    )
-                if ok:
-                    st.success(result_msg)
-                else:
-                    st.error(result_msg)
+            ext           = audio_fmt.lower()
+            attach_name   = f"authorized_output.{ext}"
+            mime_sub      = AUDIO_MIME[audio_fmt]
+            with st.spinner(f"Sending {audio_fmt} to {mt_to} via {prov['host']}..."):
+                ok, result_msg = send_audio_email(
+                    host         = prov["host"],
+                    port         = prov["port"],
+                    use_ssl      = prov["ssl"],
+                    smtp_user    = mt_user,
+                    smtp_pass    = mt_pass,
+                    sender       = mt_sender,
+                    recipient    = mt_to,
+                    audio_bytes  = authorized_audio,
+                    filename     = attach_name,
+                    mime_subtype = mime_sub,
+                )
+            if ok:
+                st.success(f"{result_msg}  •  Attachment: `{attach_name}`")
+            else:
+                st.error(result_msg)
