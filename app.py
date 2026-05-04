@@ -114,18 +114,45 @@ def send_audio_via_mailtrap(
         )
         msg.attach(part)
 
-        # Mailtrap sandbox: host=sandbox.smtp.mailtrap.io, port=2525
-        with smtplib.SMTP("sandbox.smtp.mailtrap.io", 2525, timeout=10) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(sender, recipient, msg.as_string())
+        # Try STARTTLS ports first, then SSL fallback.
+        # Port 2525 is sometimes blocked by ISPs/firewalls; 587 is more universally open.
+        host = "sandbox.smtp.mailtrap.io"
+        starttls_ports = [587, 2525, 25]
+        ssl_port       = 465
+        last_error     = None
 
-        return True, f"Email sent successfully to {recipient}!"
+        # ── attempt STARTTLS on each port ──────────────────────────────────
+        for port in starttls_ports:
+            try:
+                with smtplib.SMTP(host, port, timeout=10) as server:
+                    server.ehlo()           # identify to server
+                    server.starttls()       # upgrade to TLS
+                    server.ehlo()           # re-identify over encrypted channel (required!)
+                    server.login(smtp_user, smtp_pass)
+                    server.sendmail(sender, recipient, msg.as_string())
+                return True, f"Email sent successfully to {recipient}! (port {port})"
+            except smtplib.SMTPAuthenticationError:
+                # Credentials wrong — no point trying other ports
+                return False, "Authentication failed — double-check your Mailtrap username & password."
+            except Exception as e:
+                last_error = e
+                continue   # try next port
+
+        # ── fallback: implicit SSL on 465 ──────────────────────────────────
+        try:
+            with smtplib.SMTP_SSL(host, ssl_port, timeout=10) as server:
+                server.ehlo()
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(sender, recipient, msg.as_string())
+            return True, f"Email sent successfully to {recipient}! (port {ssl_port} SSL)"
+        except smtplib.SMTPAuthenticationError:
+            return False, "Authentication failed — double-check your Mailtrap username & password."
+        except Exception as e:
+            last_error = e
+
+        return False, f"All ports failed. Last error: {last_error}"
     except smtplib.SMTPAuthenticationError:
         return False, "Authentication failed — double-check your Mailtrap username & password."
-    except smtplib.SMTPConnectError:
-        return False, "Could not connect to Mailtrap. Check your internet connection."
     except Exception as e:
         return False, f"Unexpected error: {e}"
 
